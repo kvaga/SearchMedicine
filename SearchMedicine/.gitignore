@@ -1,0 +1,7 @@
+.project
+.classpath
+.class
+.settings
+TelegramSendMessage.env
+listOfSitesAndChecks.conf
+/bin/
