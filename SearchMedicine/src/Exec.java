@@ -3,12 +3,18 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.Reader;
+import java.io.StringWriter;
+import java.io.Writer;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Properties;
+import java.util.zip.GZIPInputStream;
 
 import ru.kvaga.telegram.sendmessage.TelegramSendMessage;
 
@@ -152,17 +158,15 @@ public class Exec {
 	public static void searchMedicine(String urlText, String searchNegativeString) throws Exception  {
 
 		try {
-			URL url = new URL(urlText);
-			HttpURLConnection con = (HttpURLConnection) url.openConnection();
-			con.setRequestMethod("GET");
-			BufferedReader br = new BufferedReader(new InputStreamReader(con.getInputStream()));
-			String s;
-			StringBuilder sb = new StringBuilder();
-			while ((s = br.readLine()) != null) {
-				sb.append(s);
-			}
+			String response=null;
 
-			String response = sb.toString();
+			if(!urlText.contains("uteka")) {
+				response = getURLContent(urlText);
+			}else {
+				response = getURLContentSimple(urlText);
+			}
+			System.err.println("Response (first 25 symbols) for url ["+urlText+"]:" + response.substring(0,25));
+
 			if (response.contains(searchNegativeString)) {
 				throw new SearchMedicineException.MedcineIsOutOfStock(
 						String.format("Couldn't find a medicine for the URL [%s]. The response contains [%s] sentence", urlText, searchNegativeString));
@@ -170,9 +174,103 @@ public class Exec {
 //			System.out.println(response);
 			System.out.println("Found item in URL: " + urlText);
 			sendMessageToTelegram("Found item in URL: " + urlText);
+			
+			if(true) {
+				System.exit(0);
+			}
 		} catch (Exception e) {
 			throw new Exception(String.format("Exception during requesting the URL: %s. ", urlText) + e.getMessage());
 		}
 	}
 
+	public static String getURLContentSimple(String urlText) throws IOException {
+		URL url = new URL(urlText);
+		HttpURLConnection con = (HttpURLConnection) url.openConnection();
+		con.setRequestMethod("GET");
+		BufferedReader br = new BufferedReader(new InputStreamReader(con.getInputStream()));
+		String s;
+		StringBuilder sb = new StringBuilder();
+		while ((s = br.readLine()) != null) {
+			sb.append(s);
+		}
+		return sb.toString();
+	}
+	public static String getURLContent(String urlText) throws Exception {
+		String body = null;
+		String charset; // You should determine it based on response header.
+		HttpURLConnection con=null;
+
+		try {
+			URL url = new URL(urlText);
+			con = (HttpURLConnection) url.openConnection();
+//			con.connect();
+			
+
+//			System.out.println("Con: " + con.getResponseCode());
+			con.setRequestMethod("GET");
+			con.setRequestProperty("accept",
+					"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9");
+			con.setRequestProperty("accept-encoding", "gzip, deflate, br");
+			con.setRequestProperty("accept-language", "en-GB,en;q=0.9,ru-RU;q=0.8,ru;q=0.7,en-US;q=0.6");
+			con.setRequestProperty("cache-control", "max-age=0");
+			con.setRequestProperty("sec-ch-ua",
+					"\"Google Chrome\";v=\"87\", \" Not;A Brand\";v=\"99\", \"Chromium\";v=\"87\"");
+			con.setRequestProperty("sec-ch-ua-mobile", "?0");
+			con.setRequestProperty("sec-fetch-dest", "document");
+			con.setRequestProperty("sec-fetch-mode", "navigate");
+			con.setRequestProperty("sec-fetch-site", "none");
+			con.setRequestProperty("sec-fetch-user", "?1");
+			con.setRequestProperty("upgrade-insecure-requests", "1");
+			con.setRequestProperty("user-agent",
+					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36");
+
+//			System.out.println("Connection response code: " + con.getResponseCode());
+
+			if (con.getContentType().toLowerCase().contains("charset=utf-8")) {
+				charset = "UTF-8";
+			} else {
+				throw new Exception(urlText + "" + String.format(". Received unsupported charset: %s. ", con.getContentType()));
+			}
+			if (con.getContentEncoding().equals("gzip")) {
+				try (InputStream gzippedResponse = con.getInputStream();
+						InputStream ungzippedResponse = new GZIPInputStream(gzippedResponse);
+						Reader reader = new InputStreamReader(ungzippedResponse, charset);
+						Writer writer = new StringWriter();) {
+					char[] buffer = new char[10240];
+					for (int length = 0; (length = reader.read(buffer)) > 0;) {
+						writer.write(buffer, 0, length);
+					}
+					body = writer.toString();
+					writer.close();
+//				    System.err.println(body);
+				}
+//				System.out.println("Received gzip content for url ["+urlText+"]: " + body.substring(0,25));
+
+			} else {
+				BufferedReader br = new BufferedReader(new InputStreamReader(con.getInputStream()));
+				String s;
+//				System.err.println("Response Message: " + con.getContentEncoding());
+				StringBuilder sb = new StringBuilder();
+				while ((s = br.readLine()) != null) {
+//					System.out.println(s);
+					sb.append(s);
+				}
+				body = sb.toString();
+				br.close();
+//				System.out.println("Received plain text content for url ["+urlText+"]: " + body.substring(0, 25));
+
+			}
+			con.disconnect();
+
+			return body;
+			
+		} catch (Exception e) {
+//			e.printStackTrace();
+			System.err.println("GetURLContentException: couldn't get a content for the ["+urlText+"] URL:" + e);
+			if(con!=null) {
+				con.disconnect();
+			}
+			throw new Exception(urlText,e);
+		}
+	}
 }
