@@ -175,9 +175,7 @@ public class Exec {
 			System.out.println("Found item in URL: " + urlText);
 			sendMessageToTelegram("Found item in URL: " + urlText);
 			
-			if(true) {
-				System.exit(0);
-			}
+			
 		} catch (Exception e) {
 			throw new Exception(String.format("Exception during requesting the URL: %s. ", urlText) + e.getMessage());
 		}
